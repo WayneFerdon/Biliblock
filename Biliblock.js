@@ -32,27 +32,35 @@ function cE(name) { // 创建元素
   return document.createElement(name);
 }
 
-function onBlock(card){
-  for(let i in blacklist)
-  {
-    if(gE(blacklist[i], card))
-    {
+function onBlock(card) {
+  for (let i in blacklist) {
+    if (gE(blacklist[i], card)) {
       card.parentNode.removeChild(card);
       return true;
     }
   };
   const cardAuthor = gE('.bili-video-card__info--author', card);
-  if(!cardAuthor) return false;
+  if (!cardAuthor) return false;
   const name = cardAuthor.title;
   const blockButton = cE('button');
   blockButton.classList.add('blockButton');
-  blockButton.onclick = ()=>{
-    if (authorBlacklist.indexOf(name)) return;
+  blockButton.onclick = () => {
+    console.log(authorBlacklist);
+    const index = authorBlacklist.indexOf(name);
+    if (index !== -1) {
+      authorBlacklist.splice(index, 1);
+      blockButton.classList.add('blockButton');
+      blockButton.classList.remove('blockButton_blocked');
+      GM_setValue('authorBlacklist', authorBlacklist);
+      return;
+    }
     authorBlacklist.push(name);
+    blockButton.classList.add('blockButton_blocked');
+    blockButton.classList.remove('blockButton');
     GM_setValue('authorBlacklist', authorBlacklist);
   }
   cardAuthor.parentNode.parentNode.appendChild(blockButton);
-  if(!authorCount[name]) authorCount[name] = 0;
+  if (!authorCount[name]) authorCount[name] = 0;
   authorCount[name] += 1;
   const alertColor = [
     [4, 'firebrick'],
@@ -60,7 +68,7 @@ function onBlock(card){
     [2, 'powderblue']
   ]
   const count = authorCount[name];
-  for(let [c, color] of alertColor) {
+  for (let [c, color] of alertColor) {
     if (count >= c) {
       gE('.bili-video-card__wrap', card).style.cssText += `background-color: ${color}`;
       break;
@@ -95,7 +103,7 @@ function addKeyListener() {
   });
 
   document.addEventListener('keydown', e => {
-    if(gE('.center-search__bar is-focus')) return;
+    if (gE('.center-search__bar is-focus')) return;
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (funcKeys.indexOf(e.key) !== -1) {
       funcKeyDown[e.key] = true;
@@ -107,12 +115,12 @@ function addKeyListener() {
       [[96],
        reloadCards],
       // numpad 7,8,9,4,5,6,1,2,3
-      [[103,104,105,100,101,102,97,98,99],
+      [[103, 104, 105, 100, 101, 102, 97, 98, 99],
        funcKeyDown['Enter'] ? openVideo : addWatchLater]
     ]
-    for(let [keyCodes, onEvent] of handlers) {
+    for (let [keyCodes, onEvent] of handlers) {
       const index = keyCodes.indexOf(keyCode);
-      if(index === -1) continue;
+      if (index === -1) continue;
       onEvent(index);
       return;
     }
@@ -130,11 +138,21 @@ function reformatStyle() {
             position: absolute;
             right: 0px;
         }
+        .blockButton_blocked{
+            width:10px;
+            height:10px;
+            background-color: red;
+            position: absolute;
+            right: 0px;
+        }
         .container.is-version8 {
             grid-template-columns: repeat(3, 1fr);
         }
         .blockButton:hover{
             background-color: red;
+        }
+        .blockButton_blocked:hover{
+            background-color: blue;
         }
         .feed-card {
             display: unset!important;
@@ -150,23 +168,23 @@ function onInitCard(card) {
 
 function startContainerObserver() {
   let observer = new MutationObserver(
-    (mutations,observer) => mutations.forEach(
-      mutation =>mutation.addedNodes.forEach(node => onInitCard(node))
+    (mutations, observer) => mutations.forEach(
+      mutation => mutation.addedNodes.forEach(node => onInitCard(node))
     )
   );
   Array.from(container.children).forEach(node => onInitCard(node));
-  observer.observe(container, {childList:true, attribute: true}); //监听翻译动态内容
+  observer.observe(container, { childList: true, attribute: true }); //监听翻译动态内容
 }
 
 const container = gE('.container');
 let totalCount = GM_getValue('totalCount');
-if(!totalCount) totalCount = 0;
+if (!totalCount) totalCount = 0;
 let authorCount = GM_getValue('authorCount');
-if(!authorCount) authorCount = {};
+if (!authorCount) authorCount = {};
 
 let authorBlacklist = GM_getValue('authorBlacklist');
-if(!authorBlacklist) authorBlacklist = [];
-authorBlacklist.forEach(name=>blacklist.push(`span[title="${name}"]`));
+if (!authorBlacklist) authorBlacklist = [];
+authorBlacklist.forEach(name => blacklist.push(`span[title="${name}"]`));
 
 reformatStyle();
 addKeyListener();
