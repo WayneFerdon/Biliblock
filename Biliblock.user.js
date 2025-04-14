@@ -1,7 +1,6 @@
 // ==UserScript==
 // @name         Biliblock
-// @description 2024-10-14
-// @version      2024-10-14
+// @version      2025.04.15.
 // @author       WayneFerdon
 // @match        https://www.bilibili.com/
 // @match        https://www.bilibili.com/?spm_id_from=*
