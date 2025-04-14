@@ -9,8 +9,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @downloadURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/main/Biliblock.js
-// @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/main/Biliblock.js
+// @downloadURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/main/Biliblock.user.js
+// @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/main/Biliblock.user.js
 // ==/UserScript==
 
 const blacklist = [
