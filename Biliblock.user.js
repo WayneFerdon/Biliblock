@@ -1,6 +1,5 @@
 // ==UserScript==
 // @name         Biliblock
-// @namespace    http://tampermonkey.net/
 // @description 2024-10-14
 // @version      2024-10-14
 // @author       WayneFerdon
