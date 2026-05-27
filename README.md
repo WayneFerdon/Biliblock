@@ -34,6 +34,6 @@ Bilibili 网页首页卡片屏蔽等小功能
 
 顶栏收藏夹自动选中稍后再看
 
-### BiliSubtitle2Console
+## BiliSubtitle2Console
 
 输出当前一条字幕至控制栏（通过监听新生成的字幕object）
