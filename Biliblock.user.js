@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Biliblock
-// @version      2026.05.15.
+// @version      2026.05.28.
 // @author       WayneFerdon
 // @match        https://www.bilibili.com/
+// @match        https://www.bilibili.com/c*
 // @match        https://www.bilibili.com/?spm_id_from=*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
 // @grant        GM_setValue
@@ -11,39 +12,110 @@
 // @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/Biliblock.user.js
 // ==/UserScript==
 
-const blacklist = [
-  '.badge', // 有徽章的卡片：直播, 番剧, 国创等
-  '.bili-live-card__info--living__text', // 直播
-  '.bili-video-card__stats>.bili-video-card__stats--text', // 广告
-  // '.recommended-swipe-core', // 滚动推荐
-  // '.bili-video-card__stats>.bili-video-card__stats--icon', // 推广
+if (window.self !== window.top) return;
 
-  // 未加载
-  '.bili-video-card__skeleton',
-  '.floor-skeleton'
-]
+const blacklist = {
+  remove: { method: onRemove, query: [
+    '.badge', // 有徽章的卡片：直播, 番剧, 国创等
+    '.bili-live-card__info--living__text', // 直播
+    // '.recommended-swipe-core', // 滚动推荐
+    '.bili-video-card__stats>.bili-video-card__stats--icon', // 推广
+    '.bili-video-card__stats>.bili-video-card__stats--text', // 广告
 
-function gE(ele, mode, parent) { // 获取元素
-  if (typeof ele === 'object') return ele;
-  if (mode === undefined && parent === undefined) return (isNaN(ele * 1)) ? document.querySelector(ele) : document.getElementById(ele);
-  if (mode === 'all') return (parent === undefined) ? document.querySelectorAll(ele) : parent.querySelectorAll(ele);
-  if (typeof mode === 'object' && parent === undefined) return mode.querySelector(ele);
+    // 未加载
+    '.bili-video-card__skeleton',
+    '.floor-skeleton',
+
+    '.vui_carousel', // 分区滚动推荐
+  ]},
+  author: { method: onNISAuthor, query: [] },
+  noInterest: { method: onNISVideo, query: [
+    // '.bili-video-card__info--icon-text', // 大量点赞
+  ]},
 }
 
-function cE(name) { // 创建元素
-  return document.createElement(name);
+let totalCount = GM_getValue('totalCount') ?? 0;
+let authorCount = GM_getValue('authorCount') ?? {};
+let cardInfos = [];
+let authorBlacklist = GM_getValue('authorBlacklist') ?? [];
+authorBlacklist.forEach(name => blacklist.author.query.push(`span[title="${name}"]`));
+
+let container;
+reformatStyle();
+addKeyListener();
+startContainerObserver();
+
+async function startContainerObserver() {
+  while (!container || !gE('.feed-card', container)) {
+    await pauseAsync(100);
+    container = gE('.container,.head-cards,.feed-cards');
+  }
+  const anchor = gE('.load-more-anchor')
+  anchor.parentNode.removeChild(anchor);
+  const cards = Array.from(container.children);
+  cards.forEach(node => onHandleNode(node));
+  startNewNodeObserver(document.body)
+  startNewNodeObserver(container)
+
+  const topbar = gE('.bili-header__bar');
+  const target = gE('.bili-feed4-layout');
+  if (!topbar || !target) return;
+  const topbarBottom = topbar.getBoundingClientRect().bottom;
+  const targetDocTop = target.getBoundingClientRect().top + window.scrollY;
+  const scrollTarget = targetDocTop - topbarBottom;
+  window.scrollTo({ top: scrollTarget });
 }
 
-function onBlock(card) {
-  for (let i in blacklist) {
-    if (gE(blacklist[i], card)) {
-      // console.log(card)
-      card.parentNode.removeChild(card);
-      return true;
+function startNewNodeObserver(target) {
+  const observer = new MutationObserver((mutations, observer) => mutations.forEach(mutation => mutation.addedNodes.forEach(onHandleNode)));
+  observer.observe(target, { childList: true });
+  return observer;
+}
+
+function onHandleNode(node) {
+  if (!(node instanceof Element)) return;
+
+  if (node.parentNode === container) {
+    const card = node;
+    const types = onBlock(card, true);
+    const nis = gE('.bili-video-card__info--no-interest', card);
+    card.style.cssText += 'margin-top: 0px;'
+    if (!nis || types?.has('remove')) {
+      onRemove(card, 1000);
+    } else {
+      cardInfos.push([card, undefined, types]);
+      nis?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+    }
+    return;
+  }
+  if (!node.classList.contains('vui_popover-is-bottom-end')) return;
+  const cardInfo = cardInfos[cardInfos.findIndex(([c, n, t])=>!n)];
+  cardInfo[1] = node;
+  const [card, nis, types] = cardInfo;
+  gE('.bili-video-card__info--no-interest', card).dispatchEvent(new MouseEvent('mouseleave', { bubbles: true, cancelable: true }));
+  if (types?.has('author')) {
+    onNISAuthor(card);
+  } else if (types?.has('noInterest')) {
+    onNISVideo(card);
+  }
+}
+
+function onBlock(card, isInit=false) {
+  let types;
+  for (let type in blacklist) {
+    for (let i in blacklist[type].query){
+      const black = blacklist[type].query[i]
+      if (!gE(black, card)) continue;
+      if (isInit) {
+        (types??=new Set()).add(type);
+      } else if (blacklist[type].method) {
+        blacklist[type].method(card);
+      }
     }
   };
+
   const cardAuthor = gE('.bili-video-card__info--author', card);
-  if (!cardAuthor) return false;
+  if (!cardAuthor) return types;
   const name = cardAuthor.title;
   const parent = gE('.bili-video-card__wrap', card);
 
@@ -56,16 +128,19 @@ function onBlock(card) {
   }
 
   blockButton.classList.add('blockButtonBase');
-  blockButton.classList.add('blockButton');
+  const index = authorBlacklist.indexOf(name);
+  if (index !== -1) {
+    blockButton.classList.add('blockButton_blocked');
+  } else {
+    blockButton.classList.add('blockButton');
+  }
   blockButton.innerText = authorCount[name] ?? 0
 
   blockButton.onclick = () => {
     const index = authorBlacklist.indexOf(name);
-    authorCount[name] = null
     if (index !== -1) {
       authorBlacklist.splice(index, 1);
-      blacklist.splice(blacklist.indexOf(`span[title="${name}"]`), 1);
-      // console.log(authorBlacklist, blacklist);
+      blacklist.author.query.splice(blacklist.author.query.indexOf(`span[title="${name}"]`), 1);
       blockButton.classList.add('blockButton');
       blockButton.classList.remove('blockButton_blocked');
       gE('.revert-btn', card).click();
@@ -73,7 +148,7 @@ function onBlock(card) {
       return;
     }
     authorBlacklist.push(name);
-    blacklist.push(`span[title="${name}"]`);
+    blacklist.author.query.push(`span[title="${name}"]`);
     blockButton.classList.add('blockButton_blocked');
     blockButton.classList.remove('blockButton');
 
@@ -98,15 +173,35 @@ function onBlock(card) {
   totalCount += 1;
   GM_setValue('authorCount', authorCount);
   GM_setValue('totalCount', totalCount);
-  return false;
+  return types;
 }
 
-function getNoInterest(card) {
-  return cardInfos.find(([c,n])=>c===card)[1];
+function onNISVideo(card) {
+  gE('.bili-video-card__info--no-interest-panel--item:first-child', getNoInterest(card)).click();
+  card.style.order = 100;
+}
+
+function onNISAuthor(card) {
+  gE('.bili-video-card__info--no-interest-panel--item:first-child', getNoInterest(card)).click();
+  gE('.bili-video-card__info--no-interest-panel--item:last-child', getNoInterest(card)).click();
+  card.style.order = 200;
+}
+
+function onRemove(card, delay) {
+  if (!delay) {
+    card.parentNode.removeChild(card);
+    return;
+  }
+  card.style.order = 500;
+  card.style.filter = 'opacity(0)';
+  card.style.cssText += 'grid-area: unset;'
+  setTimeout(()=>{
+    card.parentNode?.removeChild(card);
+  }, delay);
 }
 
 function addKeyListener() {
-  function reloadCards() {
+  function reloadCards(index, reload) {
     if (gE('.container.is-version8>div')) {
       const count = gE('.container.is-version8>div','all').length;
       for(let i=0;i<count;i++) {
@@ -114,7 +209,7 @@ function addKeyListener() {
         del(0);
       }
     }
-    gE('.primary-btn.roll-btn').click();
+    if (reload) gE('.primary-btn.roll-btn').click();
   }
   function getCard(index) {
     return Array.from(gE('.container.is-version8>div','all')).sort((a,b) =>(a.style.order||0)-(b.style.order||0))[index];
@@ -128,7 +223,7 @@ function addKeyListener() {
   function block(index) {
     const card = getCard(index);
     gE('.blockButtonBase', card).click();
-    card.style.order = 100;
+    card.style.order = 200;
   }
   function del(index) {
     if (!gE('.container.is-version8>div')) {
@@ -136,7 +231,7 @@ function addKeyListener() {
     }
     const card = getCard(index);
     if (!card) return;
-    cardInfos = cardInfos.filter(([c,n])=>c!==card);
+    cardInfos = cardInfos.filter(([c,n,t])=>c!==card);
     card.parentNode.removeChild(card);
   }
   function nis(index, revert=true, reorder=true) {
@@ -148,12 +243,12 @@ function addKeyListener() {
     }
     const noInterest = getNoInterest(card);
     gE('.bili-video-card__info--no-interest-panel--item:first-child', noInterest).click();
-    console.log('nis')
-    if (reorder) card.style.order = 100;
+    if (reorder && card.style.order === '') card.style.order = 100;
   }
 
   let funcKeyDown = {};
   const funcKeys = [13,110,107, 16,17,18]; // numpad_enter numpad_. numpad_+, shift, crtl, alt
+
   document.addEventListener('keyup', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (funcKeys.indexOf(e.keyCode) === -1) return;
@@ -161,30 +256,12 @@ function addKeyListener() {
   });
 
   window.addEventListener('blur', () => {
-    console.log('blur')
-    funcKeyDown = {};
+    Object.keys(funcKeyDown).forEach( k => { funcKeyDown[k] = undefined; });
   });
-
-  document.addEventListener('focusout', () => {
-    console.log('focusout')
-    funcKeyDown = {};
-  });
-
-  document.addEventListener('visibilitychange', () => {
-    console.log('visibilitychange')
-    funcKeyDown = {};
-  });
-
-  window.addEventListener('pagehide', () => {
-    console.log('pagehide')
-    funcKeyDown = {};
-  });
-
 
   document.addEventListener('keydown', e => {
     if (gE('.center-search__bar is-focus')) return;
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    // console.log(e.keyCode)
     if (e.keyCode === 13) e.preventDefault();
     if (funcKeys.indexOf(e.keyCode) !== -1) {
       funcKeyDown[e.keyCode] = true;
@@ -199,7 +276,7 @@ function addKeyListener() {
     const handlers = [
       // numpad 0
       [[96, 32],
-       reloadCards],
+       funcs.alt ? (_) => reloadCards(_, false) : (_)=>reloadCards(_, true)],
       // numpad 7,8,9,4,5,6,1,2,3
       [[103,104,105, 100,101,102, 97,98,99],
        funcs.del ? del : funcs.watch ? funcs.alt ? openVideo : addWatchLater : funcs.alt ? block : nis],
@@ -247,8 +324,17 @@ function reformatStyle() {
         .blockButton_blocked {
             background-color: #1E90FF!important;
         }
+        .bili-video-card__wrap {
+            border-radius: 6px;
+        }
+        .recommended-container_floor-aside {
+            display: flex;
+            justify-content: center;
+        }
         .container.is-version8 {
             grid-template-columns: repeat(3, 1fr);
+            max-width: calc(100vh / 5 / 9 * 16 * 3);
+            min-height: 100vh;
         }
         .bili-video-card__info--no-interest {
             transform: scale(1.5);
@@ -262,48 +348,22 @@ function reformatStyle() {
     `
 }
 
-function onInitCard(card) {
-  if (!(card instanceof Element) || card.parentNode !== container) return;
-  if (onBlock(card)) return;
-  card.style.cssText += 'margin-top: 0px;'
-  gE('.bili-video-card__info--no-interest', card).dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
-  cardInfos.push([card, undefined]);
+function getNoInterest(card) {
+  return cardInfos.find(([c,n,t])=>c===card)[1];
 }
 
-function onInitNoInterest(nis) {
-  if (!(nis instanceof Element)) return;
-  if (!nis.classList.contains('vui_popover-is-bottom-end')) return;
-  const cardInfo = cardInfos[cardInfos.findIndex(([c, n])=>!n)];
-  cardInfo[1] = nis;
-  const card = cardInfo[0];
-  gE('.bili-video-card__info--no-interest', card).dispatchEvent(new MouseEvent('mouseleave', { bubbles: true, cancelable: true }));
+function pauseAsync(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function startContainerObserver() {
-  let observer = new MutationObserver(
-    (mutations, observer) => mutations.forEach(
-      mutation => mutation.addedNodes.forEach(node => onInitCard(node))
-    )
-  );
-  Array.from(container.children).forEach(node => onInitCard(node));
-  observer.observe(container, { childList: true, attribute: true });
-
-  let observer2 = new MutationObserver(
-    (mutations, observer) => mutations.forEach(
-      mutation => mutation.addedNodes.forEach(node => onInitNoInterest(node))
-    )
-  );
-  observer2.observe(document.body, { childList: true, attribute: true });
+function gE(ele, mode, parent) { // 获取元素
+  if (typeof ele === 'object') return ele;
+  if (mode === undefined && parent === undefined) return (isNaN(ele * 1)) ? document.querySelector(ele) : document.getElementById(ele);
+  if (mode === 'all') return (parent === undefined) ? document.querySelectorAll(ele) : parent.querySelectorAll(ele);
+  if (typeof mode === 'object' && parent === undefined) return mode.querySelector(ele);
 }
 
-const container = gE('.container');
-let totalCount = GM_getValue('totalCount') ?? 0;
-let authorCount = GM_getValue('authorCount') ?? {};
-let cardInfos = [];
+function cE(name) { // 创建元素
+  return document.createElement(name);
+}
 
-let authorBlacklist = GM_getValue('authorBlacklist') ?? [];
-authorBlacklist.forEach(name => blacklist.push(`span[title="${name}"]`));
-
-reformatStyle();
-addKeyListener();
-startContainerObserver();
