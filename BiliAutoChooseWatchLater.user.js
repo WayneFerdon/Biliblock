@@ -1,8 +1,11 @@
 // ==UserScript==
 // @name         BiliAutoChooseWatchLater
-// @version      2026.01.29.
+// @version      2026.06.03
 // @author       WayneFerdon
-// @include        *www.bilibili.com*
+// @include        *.bilibili.com*
+// @exclude      *live.bilibili.com*
+// @exclude      *message.bilibili.com/pages/nav/header_sync*
+// @exclude      *www.bilibili.com/correspond*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -10,31 +13,27 @@
 // @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/BiliAutoChooseWatchLater.user.js
 // ==/UserScript==
 
-function gE(ele, mode, parent) { // 获取元素
-  if (typeof ele === 'object') return ele;
-  if (mode === undefined && parent === undefined) return (isNaN(ele * 1)) ? document.querySelector(ele) : document.getElementById(ele);
-  if (mode === 'all') return (parent === undefined) ? document.querySelectorAll(ele) : parent.querySelectorAll(ele);
-  if (typeof mode === 'object' && parent === undefined) return mode.querySelector(ele);
+if (window.self !== window.top) return;
+startContainerObserver();
+function startContainerObserver() {
+  let observer = new MutationObserver( (mutations, observer) => mutations.forEach( mutation => {
+    const span = Array.from(mutation.addedNodes).find(node => node.querySelector && node.querySelector('.tab-item__title[title="稍后再看"]'));
+    if (!span) return;
+    observer.disconnect();
+    (async ()=>{
+      await until(()=>document.querySelector('.tab-item.tab-item--active:first-child'));
+      span.click();
+    })();
+  }));
+  observer.observe(document.body, { subtree: true, childList: true });
 }
 
-function cE(name) { // 创建元素
-  return document.createElement(name);
-}
 function pauseAsync(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function startContainerObserver() {
-  let observer = new MutationObserver(
-    (mutations, observer) => mutations.forEach(
-      mutation => {
-        Array.from(mutation.addedNodes).map(node => node.querySelector ? gE('.tab-item__title[title="稍后再看"]', node) : undefined).filter(span=>span).forEach(span => {
-          span.click()
-          observer.disconnect();
-        });
-      }
-    )
-  );
-  observer.observe(document.body, { subtree: true, childList: true, attribute: true, attributeFilter: ['value', 'title'] });
+async function until(condition, delay){
+  let result;
+  while (!(result = await condition())) await pauseAsync(delay);
+  return result;
 }
-startContainerObserver();
