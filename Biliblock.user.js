@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Biliblock
-// @version      2026.05.28.
+// @version      2026.06.03
 // @author       WayneFerdon
 // @match        https://www.bilibili.com/
 // @match        https://www.bilibili.com/c*
 // @match        https://www.bilibili.com/?spm_id_from=*
+// @exclude      *message.bilibili.com/pages/nav/header_sync*
+// @exclude      *www.bilibili.com/correspond*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -13,7 +15,6 @@
 // ==/UserScript==
 
 if (window.self !== window.top) return;
-
 const blacklist = {
   remove: { method: onRemove, query: [
     '.badge', // 有徽章的卡片：直播, 番剧, 国创等
@@ -274,7 +275,7 @@ function addKeyListener() {
       alt: funcKeyDown[13]||funcKeyDown[18],
     }
     const handlers = [
-      // numpad 0
+      // numpad 0, space
       [[96, 32],
        funcs.alt ? (_) => reloadCards(_, false) : (_)=>reloadCards(_, true)],
       // numpad 7,8,9,4,5,6,1,2,3
@@ -290,6 +291,7 @@ function addKeyListener() {
     for (let [keyCodes, onEvent] of handlers) {
       const index = keyCodes.indexOf(keyCode);
       if (index === -1) continue;
+      e.preventDefault();
       onEvent(index);
       return;
     }
