@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         BiliHotkey
-// @version      2026.06.03
+// @version      2026.06.04
 // @author       WayneFerdon
 // @include        *www.bilibili.com*
 // @exclude        https://www.bilibili.com/
@@ -38,10 +38,10 @@ function dispatchEvent(name, data, type=undefined, target=document.body) {
   switch (true) {
     case !!type:
       break;
-    case name.includes(/^key/):
+    case !!name.match(/^key/):
       type = KeyboardEvent;
       break;
-    case name.includes(/^mouse/):
+    case !!name.match(/^mouse/):
       type = MouseEvent;
       break;
     default:
