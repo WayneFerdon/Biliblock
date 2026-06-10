@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Biliblock
-// @version      2026.06.03
+// @version      2026.06.10
 // @author       WayneFerdon
 // @match        https://www.bilibili.com/
 // @match        https://www.bilibili.com/c*
@@ -10,6 +10,7 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_listValues
 // @downloadURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/Biliblock.user.js
 // @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/Biliblock.user.js
 // ==/UserScript==
@@ -29,19 +30,28 @@ const blacklist = {
 
     '.vui_carousel', // 分区滚动推荐
   ]},
-  author: { method: onNISAuthor, query: [] },
+  author: { method: card => { onNISVideo(card); onNISAuthor(card); }, query: [] },
   noInterest: { method: onNISVideo, query: [
     // '.bili-video-card__info--icon-text', // 大量点赞
   ]},
 }
 
-let totalCount = GM_getValue('totalCount') ?? 0;
-let authorCount = GM_getValue('authorCount') ?? {};
-let cardInfos = [];
-let authorBlacklist = GM_getValue('authorBlacklist') ?? [];
-authorBlacklist.forEach(name => blacklist.author.query.push(`span[title="${name}"]`));
+GM_listValues()?.filter(a => GM_getValue(a)?.blocked).forEach(name => blacklist.author.query.push(`span[title="${name}"]`));
 
-let container;
+Object.defineProperty(Array.prototype, 'remove', { value: function(value) {
+  const index = this.indexOf(value);
+  if (index !== -1) this.splice(index, 1)
+  return this;
+}, enumerable: false });
+Object.defineProperty(Array.prototype, 'removeAll', { value: function(value) {
+  for (let i = this.length - 1; i >= 0; i--) {
+    if (this[i] === value) this.splice(i, 1);
+  }
+  return this;
+}, enumerable: false });
+
+let container, cardInfos = [];
+
 reformatStyle();
 addKeyListener();
 startContainerObserver();
@@ -53,32 +63,29 @@ async function startContainerObserver() {
   }
   const anchor = gE('.load-more-anchor')
   anchor.parentNode.removeChild(anchor);
-  const cards = Array.from(container.children);
-  cards.forEach(node => onHandleNode(node));
+  Array.from(container.children).forEach(node => onHandleNISNode(node));
   startNewNodeObserver(document.body)
   startNewNodeObserver(container)
 
-  const topbar = gE('.bili-header__bar');
-  const target = gE('.bili-feed4-layout');
-  if (!topbar || !target) return;
-  const topbarBottom = topbar.getBoundingClientRect().bottom;
-  const targetDocTop = target.getBoundingClientRect().top + window.scrollY;
+  const topbarBottom = gE('.bili-header__bar').getBoundingClientRect().bottom;
+  const targetDocTop = gE('.bili-feed4-layout').getBoundingClientRect().top + window.scrollY;
   const scrollTarget = targetDocTop - topbarBottom;
   window.scrollTo({ top: scrollTarget });
 }
 
 function startNewNodeObserver(target) {
-  const observer = new MutationObserver((mutations, observer) => mutations.forEach(mutation => mutation.addedNodes.forEach(onHandleNode)));
+  const observer = new MutationObserver((mutations, observer) => mutations.forEach(mutation => mutation.addedNodes.forEach(onHandleNISNode)));
   observer.observe(target, { childList: true });
   return observer;
 }
 
-function onHandleNode(node) {
+function onHandleNISNode(node) {
   if (!(node instanceof Element)) return;
 
   if (node.parentNode === container) {
     const card = node;
-    const types = onBlock(card, true);
+    const types = getBlockTypes(card);
+    onBlock(card);
     const nis = gE('.bili-video-card__info--no-interest', card);
     card.style.cssText += 'margin-top: 0px;'
     if (!nis || types?.has('remove')) {
@@ -94,98 +101,83 @@ function onHandleNode(node) {
   cardInfo[1] = node;
   const [card, nis, types] = cardInfo;
   gE('.bili-video-card__info--no-interest', card).dispatchEvent(new MouseEvent('mouseleave', { bubbles: true, cancelable: true }));
-  if (types?.has('author')) {
-    onNISAuthor(card);
-  } else if (types?.has('noInterest')) {
-    onNISVideo(card);
-  }
+  if (types?.has('noInterest')) onNISVideo(card);
+  if (types?.has('author')) onNISAuthor(card);
 }
 
-function onBlock(card, isInit=false) {
+function getBlockTypes(card) {
   let types;
-  for (let type in blacklist) {
-    for (let i in blacklist[type].query){
-      const black = blacklist[type].query[i]
-      if (!gE(black, card)) continue;
-      if (isInit) {
-        (types??=new Set()).add(type);
-      } else if (blacklist[type].method) {
-        blacklist[type].method(card);
-      }
-    }
-  };
+  for (let type in blacklist) { for (let i in blacklist[type].query){
+    if (!gE(blacklist[type].query[i], card)) continue;
+    (types??=new Set()).add(type);
+  } };
+  return types;
+}
 
-  const cardAuthor = gE('.bili-video-card__info--author', card);
-  if (!cardAuthor) return types;
-  const name = cardAuthor.title;
-  const parent = gE('.bili-video-card__wrap', card);
-
+function onBlock(card) {
+  const name = gE('.bili-video-card__info--author', card)?.title;
+  if (!name) return;
+  const getData = () => GM_getValue(name, {});
+  const data = getData();
+  const now = new Date().getTime();
   const blockButton = cE('div');
+  const parent = gE('.bili-video-card__wrap', card);
   const firstChild = parent.firstChild;
-  if (firstChild) {
-    parent.insertBefore(blockButton, firstChild);
-  } else {
-    parent.appendChild(blockButton);
+  (firstChild ? parent.insertBefore : parent.appendChild).call(parent, blockButton, firstChild);
+  blockButton.classList.add('blockButton');
+  if (data.blocked) blockButton.classList.add('blockButton_blocked');
+  blockButton.onclick = onclick;
+  if (!data.count) data.count = 0;
+  if ((!data.blocked) && (data.count <= 5)
+      && ((now - data.time??0) > 7*24*60*60*1000))
+  {
+    data.count = 0;
   }
+  data.count += 1;
+  data.time = now;
+  GM_setValue(name, data);
 
-  blockButton.classList.add('blockButtonBase');
-  const index = authorBlacklist.indexOf(name);
-  if (index !== -1) {
-    blockButton.classList.add('blockButton_blocked');
-  } else {
-    blockButton.classList.add('blockButton');
-  }
-  blockButton.innerText = authorCount[name] ?? 0
-
-  blockButton.onclick = () => {
-    const index = authorBlacklist.indexOf(name);
-    if (index !== -1) {
-      authorBlacklist.splice(index, 1);
-      blacklist.author.query.splice(blacklist.author.query.indexOf(`span[title="${name}"]`), 1);
-      blockButton.classList.add('blockButton');
-      blockButton.classList.remove('blockButton_blocked');
-      gE('.revert-btn', card).click();
-      GM_setValue('authorBlacklist', authorBlacklist);
-      return;
-    }
-    authorBlacklist.push(name);
-    blacklist.author.query.push(`span[title="${name}"]`);
-    blockButton.classList.add('blockButton_blocked');
-    blockButton.classList.remove('blockButton');
-
-    const noInterest = getNoInterest(card);
-    gE('.bili-video-card__info--no-interest-panel--item:last-child', noInterest).click();
-    GM_setValue('authorBlacklist', authorBlacklist);
-  }
-  if (!authorCount[name]) authorCount[name] = 0;
-  authorCount[name] += 1;
+  blockButton.innerText = data.count;
   const alertColor = [
     [10, 'hsl(0, 67.9%, 11.6%)'],
     [5, 'hsl(38.8, 80%, 50%)'],
     [2, 'hsl(185.5, 30%, 20%)']
   ]
-  const count = authorCount[name];
   for (let [c, color] of alertColor) {
-    if (count >= c) {
+    if (data.count >= c) {
       gE('.bili-video-card__wrap', card).style.cssText += `background-color: ${color}`;
       break;
     }
   }
-  totalCount += 1;
-  GM_setValue('authorCount', authorCount);
-  GM_setValue('totalCount', totalCount);
-  return types;
+
+  function onclick () {
+    const data = getData();
+    data.blocked = data.blocked ? undefined : true;
+    GM_setValue(name, data);
+    if (!data.blocked) {
+      blacklist.author.query.remove(`span[title="${name}"]`);
+      blockButton.classList.remove('blockButton_blocked');
+      gE('.revert-btn', card).click();
+      return;
+    }
+    blacklist.author.query.push(`span[title="${name}"]`);
+    blockButton.classList.add('blockButton_blocked');
+    onNISAuthor(card);
+  }
+}
+
+function getNoInterest(card) {
+  return cardInfos.find(([c,n,t])=>c===card)[1];
+}
+
+function onNISAuthor(card) {
+  gE('.bili-video-card__info--no-interest-panel--item:last-child', getNoInterest(card)).click();
+  card.style.order = 200;
 }
 
 function onNISVideo(card) {
   gE('.bili-video-card__info--no-interest-panel--item:first-child', getNoInterest(card)).click();
-  card.style.order = 100;
-}
-
-function onNISAuthor(card) {
-  gE('.bili-video-card__info--no-interest-panel--item:first-child', getNoInterest(card)).click();
-  gE('.bili-video-card__info--no-interest-panel--item:last-child', getNoInterest(card)).click();
-  card.style.order = 200;
+  if (card.style.order === '') card.style.order = 100;
 }
 
 function onRemove(card, delay) {
@@ -206,7 +198,7 @@ function addKeyListener() {
     if (gE('.container.is-version8>div')) {
       const count = gE('.container.is-version8>div','all').length;
       for(let i=0;i<count;i++) {
-        nis(0, false, false);
+        nis(0, false);
         del(0);
       }
     }
@@ -223,7 +215,7 @@ function addKeyListener() {
   }
   function block(index) {
     const card = getCard(index);
-    gE('.blockButtonBase', card).click();
+    gE('.blockButton', card).click();
     card.style.order = 200;
   }
   function del(index) {
@@ -235,16 +227,14 @@ function addKeyListener() {
     cardInfos = cardInfos.filter(([c,n,t])=>c!==card);
     card.parentNode.removeChild(card);
   }
-  function nis(index, revert=true, reorder=true) {
+  function nis(index, revert=true) {
     const card = getCard(index);
     if (!card) return;
-    if (gE('.bili-video-card__no-interest', card).style.display !== 'none' && gE('.no-interest-title', card)?.innerText === '内容不感兴趣') {
+    if (gE('.bili-video-card__no-interest', card)?.style.display !== 'none' && gE('.no-interest-title', card)?.innerText === '内容不感兴趣') {
       if (revert) gE('.revert-btn', card).click();
       return;
     }
-    const noInterest = getNoInterest(card);
-    gE('.bili-video-card__info--no-interest-panel--item:first-child', noInterest).click();
-    if (reorder && card.style.order === '') card.style.order = 100;
+    onNISVideo(card)
   }
 
   let funcKeyDown = {};
@@ -302,11 +292,11 @@ function reformatStyle() {
   const style = cE('style');
   document.head.appendChild(style);
   style.innerHTML = `
-        .blockButtonBase {
+        .blockButton {
             width: 28px;
             height: 28px;
             position: absolute;
-            bottom: 0;
+            top: 0;
             right: 0;
             border: 1px solid var(--line_light);
             border-radius: 6px;
@@ -315,14 +305,10 @@ function reformatStyle() {
             align-content: center;
             text-align: center;
         }
-        .blockButton,
-        .blockButton_blocked:hover{
-            // background-color: #c00!important;
-        }
-        .blockButton:hover {
+        .blockButton_blocked:hover {
             background-color: #242526!important;
-            /*background-color: #1E90FF!important;*/
         }
+        .blockButton:not(.blockButton_blocked):hover,
         .blockButton_blocked {
             background-color: #1E90FF!important;
         }
@@ -333,10 +319,12 @@ function reformatStyle() {
             display: flex;
             justify-content: center;
         }
+        .feed2 {
+            min-height: 100vh;
+        }
         .container.is-version8 {
             grid-template-columns: repeat(3, 1fr);
             max-width: calc(100vh / 5 / 9 * 16 * 3);
-            min-height: 100vh;
         }
         .bili-video-card__info--no-interest {
             transform: scale(1.5);
@@ -348,10 +336,6 @@ function reformatStyle() {
 		    display: block!important;
 	    }
     `
-}
-
-function getNoInterest(card) {
-  return cardInfos.find(([c,n,t])=>c===card)[1];
 }
 
 function pauseAsync(ms) {
