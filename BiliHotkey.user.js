@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         BiliHotkey
-// @version      2026.06.04
+// @version      2026.06.13
 // @author       WayneFerdon
 // @include        *www.bilibili.com*
+// @include         *live.bilibili.com*
 // @exclude        https://www.bilibili.com/
 // @exclude        https://www.bilibili.com/c*
 // @exclude        https://www.bilibili.com/?spm_id_from=*
@@ -15,8 +16,7 @@
 // @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/BiliHotkey.user.js
 // ==/UserScript==
 
-if (window.self !== window.top) return;
-
+if (window.self !== window.top && !window.location.href.match(/live\.bilibili\.com\/blanc\/(\d+)\?liteVersion=true/)) return;
 addKeyListener(window.location.href.match(/:\/\/(.*?)\.bilibili\.com/)[1]);
 const keyDefinitions = {
   www: {
@@ -26,13 +26,38 @@ const keyDefinitions = {
     82: undefined, // R
     13: () => gE('.bpx-player-ctrl-full')?.click(), // NumpadEnter
     96: () => gE('.bpx-player-ctrl-play')?.click(), // Numpad0
+    90: () => dispatchEvent(gE('.bpx-player-ctrl-playbackrate-result').innerText !== '3.0x' ? 'keydown' : 'keyup', { keyCode: 39, bubbles: true }), // z -> ArrowRight
     97: () => dispatchEvent(gE('.bpx-player-ctrl-playbackrate-result').innerText !== '3.0x' ? 'keydown' : 'keyup', { keyCode: 39, bubbles: true }), // numpad1 -> ArrowRight
     98: () => switchPlayrate(false), // Numpad2
     99: () => switchPlayrate(true), // Numpad3
     101: () => dispatchEvent('keydown', { keyCode: 40, bubbles: true }), // Numpad5 -> ArrowDown
     110: () => gE('.bpx-player-ctrl-web')?.click(), // NumpadDecimal
   },
+  live: {
+    32: function like () {
+      like.prototype.count ??= 0;
+      if (!(like.prototype.likeStarted = !like.prototype.likeStarted)) return;
+      (async function (){
+        const btn = await until(()=>gE('[data-type="dianzan.0.show"]'));
+        await until(async () => {
+          btn.click();
+          like.prototype.count++;
+          return !like.prototype.likeStarted || like.prototype.count >= 300;
+        }, 1000);
+      })();
+    }
+  }
 }
+
+function pauseAsync(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function until(condition, delay){ try {
+  let result;
+  while (!(result = await condition())) await pauseAsync(delay);
+  return result;
+} catch (err) { console.error(err); }}
 
 function dispatchEvent(name, data, type=undefined, target=document.body) {
   switch (true) {
