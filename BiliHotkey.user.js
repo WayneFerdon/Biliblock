@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         BiliHotkey
-// @version      2026.06.13
+// @version      2026.06.16
 // @author       WayneFerdon
 // @include        *www.bilibili.com*
 // @include         *live.bilibili.com*
@@ -10,8 +10,6 @@
 // @exclude      *message.bilibili.com/pages/nav/header_sync*
 // @exclude      *www.bilibili.com/correspond*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
-// @grant        GM_setValue
-// @grant        GM_getValue
 // @downloadURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/BiliHotkey.user.js
 // @updateURL https://github.com/WayneFerdon/Biliblock/raw/refs/heads/master/BiliHotkey.user.js
 // ==/UserScript==
