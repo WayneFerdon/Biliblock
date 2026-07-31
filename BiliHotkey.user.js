@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         BiliHotkey
-// @version      2026.06.16
+// @version      2026.08.01
 // @author       WayneFerdon
 // @include        *www.bilibili.com*
 // @include         *live.bilibili.com*
@@ -16,36 +16,45 @@
 
 if (window.self !== window.top && !window.location.href.match(/live\.bilibili\.com\/blanc\/(\d+)\?liteVersion=true/)) return;
 addKeyListener(window.location.href.match(/:\/\/(.*?)\.bilibili\.com/)[1]);
+let debug//=1;
+let likeStarted=false;
 const keyDefinitions = {
   www: {
     81: undefined, // Q
     87: undefined, // W
     69: undefined, // E
     82: undefined, // R
-    13: () => gE('.bpx-player-ctrl-full')?.click(), // NumpadEnter
-    96: () => gE('.bpx-player-ctrl-play')?.click(), // Numpad0
+    NumpadEnter: () => gE('.bpx-player-ctrl-full')?.click(), // NumpadEnter
+    Numpad0: () => gE('.bpx-player-ctrl-play')?.click(), // Numpad0
     90: () => dispatchEvent(gE('.bpx-player-ctrl-playbackrate-result').innerText !== '3.0x' ? 'keydown' : 'keyup', { keyCode: 39, bubbles: true }), // z -> ArrowRight
-    97: () => dispatchEvent(gE('.bpx-player-ctrl-playbackrate-result').innerText !== '3.0x' ? 'keydown' : 'keyup', { keyCode: 39, bubbles: true }), // numpad1 -> ArrowRight
-    98: () => switchPlayrate(false), // Numpad2
-    99: () => switchPlayrate(true), // Numpad3
-    101: () => dispatchEvent('keydown', { keyCode: 40, bubbles: true }), // Numpad5 -> ArrowDown
-    110: () => gE('.bpx-player-ctrl-web')?.click(), // NumpadDecimal
+    Numpad1: () => dispatchEvent(gE('.bpx-player-ctrl-playbackrate-result').innerText !== '3.0x' ? 'keydown' : 'keyup', { keyCode: 39, bubbles: true }), // Numpad1 -> ArrowRight
+    Numpad2: () => switchPlayrate(false), // Numpad2
+    Numpad3: () => switchPlayrate(true), // Numpad3
+    Numpad5: () => dispatchEvent('keydown', { keyCode: 40, bubbles: true }), // Numpad5 -> ArrowDown
+    NumpadDecimal: () => gE('.bpx-player-ctrl-web')?.click(), // NumpadDecimal
   },
   live: {
-    32: function like () {
-      like.prototype.count ??= 0;
-      if (!(like.prototype.likeStarted = !like.prototype.likeStarted)) return;
-      (async function (){
-        const btn = await until(()=>gE('[data-type="dianzan.0.show"]'));
-        await until(async () => {
-          btn.click();
-          like.prototype.count++;
-          return !like.prototype.likeStarted || like.prototype.count >= 300;
-        }, 1000);
-      })();
+    75: async function like () {
+      likeStarted = !likeStarted;
+      while (likeStarted) {
+        gE('[data-type="dianzan.0.show"]')?.click();
+        if (gE('[id*="like-animation"]')?.id.match(/\d+/)*1 >= 400) break;
+        await pauseAsync(100);
+      }
+      likeStarted = false;
     }
   }
 }
+
+// document.addEventListener('keyup', e => {
+//   if (debug) console.log(e)
+//   if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+//   if (gE('.center-search__bar is-focus')) return;
+//   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+//   if (e.keyCode !== 75) return;
+//   e.preventDefault();
+//   e.stopPropagation();
+// }, true);
 
 function pauseAsync(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -83,15 +92,16 @@ function switchPlayrate(increase) {
 
 function addKeyListener(page) {
   document.addEventListener('keydown', e => {
+    if (debug) console.log(e)
     if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
     if (gE('.center-search__bar is-focus')) return;
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     const definitions = keyDefinitions[page];
-    if (!definitions || !Object.keys(definitions).includes(`${e.keyCode}`)) return;
+    if (!definitions) return;
+    const method = definitions[e.code] ?? definitions[e.keyCode];
+    if (!method) return;
     e.preventDefault();
     e.stopPropagation();
-    const method = definitions[e.keyCode];
-    if (!method) return;
     method();
   }, true);
 }
