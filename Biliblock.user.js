@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Biliblock
-// @version      2026.06.10
+// @version      2026.09.22
 // @author       WayneFerdon
 // @match        https://www.bilibili.com/
 // @match        https://www.bilibili.com/c*
@@ -202,7 +202,7 @@ function addKeyListener() {
         del(0);
       }
     }
-    if (reload) gE('.primary-btn.roll-btn').click();
+    if (reload) gE('.roll-btn-text').click();
   }
   function getCard(index) {
     return Array.from(gE('.container.is-version8>div','all')).sort((a,b) =>(a.style.order||0)-(b.style.order||0))[index];
